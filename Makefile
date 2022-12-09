@@ -2,7 +2,7 @@ build:
 	mkdir build
 
 build/blink.o: blink.c | build
-	clang -c -target riscv32 -mabi=ilp32 -mcmodel=medlow -march=rv32imc -ggdb3 -nostdlib -ffunction-sections $^ -o $@
+	clang -c -target riscv32 -mabi=ilp32 -mcmodel=medlow -march=rv32imc -Os -ggdb3 -nostdlib -ffunction-sections $^ -o $@
 
 build/blink.elf: link.ld build/blink.o | build
 	clang -target riscv32 -mabi=ilp32 -mcmodel=medlow -march=rv32imc -nostdlib -ggdb3 -Wl,-Map,$@.map -T $^ -o $@

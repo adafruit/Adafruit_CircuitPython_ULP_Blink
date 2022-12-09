@@ -9,10 +9,10 @@
 #define DR_REG_RTC_IO_BASE (0xa400)
 #define RTC_IO_TOUCH_PAD0_REG IO(DR_REG_RTC_IO_BASE + 0x0084)
 #define RTC_IO_TOUCH_PAD0_MUX_SEL  (1 << 19)
-#define RTC_GPIO_ENABLE_REG IO(DR_REG_RTC_IO_BASE + 0x0020)
-#define RTC_GPIO_ENABLE_W1TS_REG IO(DR_REG_RTC_IO_BASE + 0x0024)
-#define RTC_GPIO_OUT_W1TS_REG IO(DR_REG_RTC_IO_BASE + 0x0008)
-#define RTC_GPIO_OUT_W1TC_REG IO(DR_REG_RTC_IO_BASE + 0x000C)
+#define RTC_GPIO_ENABLE_REG IO(DR_REG_RTC_IO_BASE + 0x000C)
+#define RTC_GPIO_ENABLE_W1TS_REG IO(DR_REG_RTC_IO_BASE + 0x0010)
+#define RTC_GPIO_OUT_W1TS_REG IO(DR_REG_RTC_IO_BASE + 0x0004)
+#define RTC_GPIO_OUT_W1TC_REG IO(DR_REG_RTC_IO_BASE + 0x0008)
 
 #define DR_REG_RTCCNTL_BASE (0x8000)
 #define RTC_CNTL_COCPU_CTRL_REG IO(DR_REG_RTCCNTL_BASE + 0x0104)
@@ -59,8 +59,8 @@ static void __attribute__((used)) shutdown(void) {
 }
 
 void __attribute__((naked)) start(void) {
-    asm ("lui sp, 0x2000");
-    // asm ("call rescue_from_monitor");
+    asm ("lui sp, 0x2");
+    asm ("call rescue_from_monitor");
     asm ("call main");
     asm ("call shutdown");
 }
@@ -70,26 +70,25 @@ int main (void) {
     bool gpio_level = true;
 
     // // ulp_riscv_gpio_init(GPIO_NUM_21);
-    // *SENS_SAR_PERI_CLK_GATE_CONF_REG = SENS_IOMUX_CLK_EN;
-    // *(RTC_IO_TOUCH_PAD0_REG + pin_number) = RTC_IO_TOUCH_PAD0_MUX_SEL;
+    *SENS_SAR_PERI_CLK_GATE_CONF_REG = SENS_IOMUX_CLK_EN;
+    *(RTC_IO_TOUCH_PAD0_REG + pin_number) = RTC_IO_TOUCH_PAD0_MUX_SEL;
     
     // // ulp_riscv_gpio_output_enable(GPIO_NUM_21);
-    // *RTC_GPIO_ENABLE_W1TS_REG = 1 << pin_number;
-    // count = (uint32_t) (SENS_SAR_PERI_CLK_GATE_CONF_REG);
+    *RTC_GPIO_ENABLE_W1TS_REG = 1 << (pin_number + 10);
+    count = (uint32_t) (RTC_GPIO_ENABLE_W1TS_REG);
 
     while (true) {
-        count = 8762;
         // ulp_riscv_gpio_output_level(GPIO_NUM_21, gpio_level);
-        // if (gpio_level) {
-        //     *RTC_GPIO_OUT_W1TS_REG = 1 << pin_number;
-        // } else {
-        //     *RTC_GPIO_OUT_W1TC_REG = 1 << pin_number;
-        // }
+        if (gpio_level) {
+            *RTC_GPIO_OUT_W1TS_REG = 1 << (pin_number + 10);
+        } else {
+            *RTC_GPIO_OUT_W1TC_REG = 1 << (pin_number + 10);
+        }
         // ulp_riscv_delay_cycles(shared_mem[0] * 10 * ULP_RISCV_CYCLES_PER_MS);
         uint32_t end;
         asm volatile("rdcycle %0;" : "=r"(end));
         uint32_t now = end;
-        end += 10 * ULP_RISCV_CYCLES_PER_MS;
+        end += 1000 * ULP_RISCV_CYCLES_PER_MS;
         while (now < end) {
             asm volatile("rdcycle %0;" : "=r"(now));
         }
