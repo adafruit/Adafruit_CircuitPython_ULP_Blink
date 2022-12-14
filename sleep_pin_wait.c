@@ -8,11 +8,17 @@
 #define SENS_IOMUX_CLK_EN (1 << 31)
 #define DR_REG_RTC_IO_BASE (0xa400)
 #define RTC_IO_TOUCH_PAD0_REG IO(DR_REG_RTC_IO_BASE + 0x0084)
+#define RTC_IO_TOUCH_PAD0_FUN_IE  (1 << 13)
 #define RTC_IO_TOUCH_PAD0_MUX_SEL  (1 << 19)
+#define RTC_IO_TOUCH_PAD0_RUE  (1 << 27)
+#define RTC_IO_TOUCH_PAD0_SLP_SEL  (1 << 16)
+#define RTC_IO_TOUCH_PAD0_SLP_IE  (1 << 15)
 #define RTC_GPIO_ENABLE_REG IO(DR_REG_RTC_IO_BASE + 0x000C)
 #define RTC_GPIO_ENABLE_W1TS_REG IO(DR_REG_RTC_IO_BASE + 0x0010)
+#define RTC_GPIO_ENABLE_W1TC_REG IO(DR_REG_RTC_IO_BASE + 0x0014)
 #define RTC_GPIO_OUT_W1TS_REG IO(DR_REG_RTC_IO_BASE + 0x0004)
 #define RTC_GPIO_OUT_W1TC_REG IO(DR_REG_RTC_IO_BASE + 0x0008)
+#define RTC_GPIO_IN_REG IO(DR_REG_RTC_IO_BASE + 0x0024)
 
 #define DR_REG_RTCCNTL_BASE (0x8000)
 #define RTC_CNTL_COCPU_CTRL_REG IO(DR_REG_RTCCNTL_BASE + 0x0104)
@@ -20,18 +26,22 @@
 #define RTC_CNTL_COCPU_SHUT_RESET_EN (1 << 22)
 #define RTC_CNTL_COCPU_SHUT_2_CLK_DIS_Pos (14)
 
+#define RTC_CNTL_RTC_PAD_HOLD_REG IO(DR_REG_RTCCNTL_BASE + 0x00D8)
+
+#define RTC_CNTL_RTC_STATE0_REG IO(DR_REG_RTCCNTL_BASE + 0x018)
+#define RTC_CNTL_RTC_STATE0_SW_CPU_INT (1 << 0)
+
 #define ULP_RISCV_CYCLES_PER_MS 17500
 
 typedef uint32_t cp_mcu_pin_number_t;
 
-// The pin to blink
-cp_mcu_pin_number_t led_pin = 15;
+// The pin to check for low and then wake from.
+cp_mcu_pin_number_t button_pin = 14;
+
+cp_mcu_pin_number_t led_pin = 16;
 
 // Sx chip version
 uint32_t sx_version = 3;
-
-// The delay between toggles in milliseconds
-volatile uint32_t delay = 500;
 
 void __attribute__((naked)) reset(void) {
     asm ("j start");
@@ -66,35 +76,40 @@ void __attribute__((naked)) start(void) {
 
 int main (void) {
     bool gpio_level = true;
-    uint32_t cycles_per_ms = 0;
     // // ulp_riscv_gpio_init(GPIO_NUM_21);
     if (sx_version == 3) {
         *SENS_SAR_PERI_CLK_GATE_CONF_REG = SENS_IOMUX_CLK_EN;
-        cycles_per_ms = 17500;
     } else if (sx_version == 2) {
-        cycles_per_ms = 8500;
     }
-    *(RTC_IO_TOUCH_PAD0_REG + led_pin) = RTC_IO_TOUCH_PAD0_MUX_SEL;
+    // Select analog mux.
+    *(RTC_IO_TOUCH_PAD0_REG + button_pin) |= RTC_IO_TOUCH_PAD0_MUX_SEL;
+    // Then write a zero to the function selection.
+    *(RTC_IO_TOUCH_PAD0_REG + button_pin) &= ~(0x3 << 17); 
+    *(RTC_IO_TOUCH_PAD0_REG + button_pin) |= RTC_IO_TOUCH_PAD0_RUE | RTC_IO_TOUCH_PAD0_FUN_IE;
     
     // // ulp_riscv_gpio_output_enable(GPIO_NUM_21);
-    *RTC_GPIO_ENABLE_W1TS_REG = 1 << (led_pin + 10);
+    *RTC_GPIO_ENABLE_W1TC_REG = 1 << (button_pin + 10);
+    // *(RTC_IO_TOUCH_PAD0_REG + led_pin) = RTC_IO_TOUCH_PAD0_MUX_SEL;
+    
+    // // ulp_riscv_gpio_output_enable(GPIO_NUM_21);
+    // *RTC_GPIO_ENABLE_W1TS_REG = 1 << (led_pin + 10);
+
+    // Latch the input value config.
+    *RTC_CNTL_RTC_PAD_HOLD_REG |= (1 << button_pin);
+    bool int_sent = false;
 
     while (true) {
-        // ulp_riscv_gpio_output_level(GPIO_NUM_21, gpio_level);
-        if (gpio_level) {
-            *RTC_GPIO_OUT_W1TS_REG = 1 << (led_pin + 10);
+        uint32_t in = (*RTC_GPIO_IN_REG) >> 10;
+        if ((in & (1 << button_pin)) == 0) {
+            if (!int_sent) {
+                *RTC_CNTL_RTC_STATE0_REG |= RTC_CNTL_RTC_STATE0_SW_CPU_INT;
+                // *RTC_GPIO_OUT_W1TS_REG = 1 << (led_pin + 10);
+            }
+            int_sent = true;
         } else {
-            *RTC_GPIO_OUT_W1TC_REG = 1 << (led_pin + 10);
+            int_sent = false;
+            // *RTC_GPIO_OUT_W1TC_REG = 1 << (led_pin + 10);
         }
-        // ulp_riscv_delay_cycles(shared_mem[0] * 10 * ULP_RISCV_CYCLES_PER_MS);
-        uint32_t end;
-        asm volatile("rdcycle %0;" : "=r"(end));
-        uint32_t now = end;
-        end += delay * cycles_per_ms;
-        while (now < end) {
-            asm volatile("rdcycle %0;" : "=r"(now));
-        }
-        gpio_level = !gpio_level;
     }
 
     // ulp_riscv_shutdown() is called automatically when main exits

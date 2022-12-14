@@ -43,7 +43,11 @@ for i in ast["inner"]:
         qualType = i["type"]["qualType"]
         c_globals.append((i["name"], qualType, default_value, comment))
         attribute = False
-        if "volatile" in qualType:
+        pin = False
+        if qualType == "cp_mcu_pin_number_t":
+            t = "uint32_t"
+            pin = True
+        elif "volatile" in qualType:
             t = qualType.replace("volatile", "").strip()
             attribute = True
         else:
@@ -52,13 +56,11 @@ for i in ast["inner"]:
         typecode = std_to_type.get(t, None)
 
         if not typecode:
-            print(t)
-            continue
+            raise ValueError("Unsupported type:" + t)
 
         if attribute:
             attributes.append((i["name"], typecode, "\n\n".join(comment), default_value))
-        else:
-            parameters.append((i["name"], typecode, "\n".join(comment), default_value))
+        parameters.append((i["name"], typecode, "\n".join(comment), default_value, pin))
 
 symbols = {}
 binary = {}
@@ -124,12 +126,19 @@ for name, typecode, comment, _ in attributes:
 
 print("    def __init__(self,")
 ps = []
-for name, _, _, default_value in parameters:
+for name, _, _, _, pin in parameters:
+    if not pin:
+        continue
+    ps.append(f"{name}: microcontroller.Pin")
+for name, _, _, default_value, pin in parameters:
+    if pin:
+        continue
     ps.append(f"{name}: {typecode[1]} = {default_value}")
 print(",\n".join(ps))
 print(") -> None:")
 print("        self.ulp = espulp.ULP()")
 print("        self.ulp.halt()")
+print("        self.pins = []")
 print(f"        self.program = bytearray({total_size})")
 full_binary = bytearray(total_size)
 for start_address in binary:
@@ -145,9 +154,12 @@ for start_address in binary:
     print("        )")
 with open(str(elf_file) + ".bin", "wb") as f:
     f.write(full_binary)
-for name, typecode, _, default_value in parameters:
+for name, typecode, _, default_value, pin in parameters:
     address = symbols[name]
+    if pin:
+        print(f"        self.pins.append({name})")
+        name = f"espulp.get_rtc_gpio_number({name})"
     print(f"        struct.pack_into(\"{typecode[0]}\", self.program, 0x{address:08x}, {name})")
 print("        self.memory_map = memorymap.AddressRange(start=0x50000000, length=0x2000)")
-print("        self.ulp.run(self.program)")
+print("        self.ulp.run(self.program, pins=self.pins)")
 print()
