@@ -4,8 +4,10 @@
 #define IO(a) ((volatile uint32_t*) (a))
 
 #define DR_REG_SENS_BASE (0xC800)
-#define SENS_SAR_PERI_CLK_GATE_CONF_REG IO(DR_REG_SENS_BASE + 0x0104)
-#define SENS_IOMUX_CLK_EN (1 << 31)
+#define S3_SENS_SAR_PERI_CLK_GATE_CONF_REG IO(DR_REG_SENS_BASE + 0x0104)
+#define S3_SENS_IOMUX_CLK_EN (1 << 31)
+#define S2_SENS_SAR_IO_MUX_CONF_REG IO(DR_REG_SENS_BASE + 0x0144)
+#define S2_SENS_IOMUX_CLK_GATE_EN (1 << 31)
 #define DR_REG_RTC_IO_BASE (0xa400)
 #define RTC_IO_TOUCH_PAD0_REG IO(DR_REG_RTC_IO_BASE + 0x0084)
 #define RTC_IO_TOUCH_PAD0_MUX_SEL  (1 << 19)
@@ -69,9 +71,10 @@ int main (void) {
     uint32_t cycles_per_ms = 0;
     // // ulp_riscv_gpio_init(GPIO_NUM_21);
     if (sx_version == 3) {
-        *SENS_SAR_PERI_CLK_GATE_CONF_REG = SENS_IOMUX_CLK_EN;
+        *S3_SENS_SAR_PERI_CLK_GATE_CONF_REG = S3_SENS_IOMUX_CLK_EN;
         cycles_per_ms = 17500;
     } else if (sx_version == 2) {
+        *S2_SENS_SAR_IO_MUX_CONF_REG = S2_SENS_IOMUX_CLK_GATE_EN;
         cycles_per_ms = 8500;
     }
     *(RTC_IO_TOUCH_PAD0_REG + led_pin) = RTC_IO_TOUCH_PAD0_MUX_SEL;
